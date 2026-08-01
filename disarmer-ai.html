@@ -1,0 +1,1476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>DISARMER AI · TACTICAL COMMAND</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.14.0/dist/tf.min.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Orbitron:wght@400;600;800;900&family=Exo+2:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #050a0f;
+            --bg2: #080e15;
+            --panel: #0b1520;
+            --panel2: #0e1c2a;
+            --border: #1a3a55;
+            --border-hot: #ff3b3b;
+            --accent: #00d4ff;
+            --accent2: #ff3b3b;
+            --accent3: #39ff14;
+            --text: #c8dde8;
+            --text-dim: #5a7a8a;
+            --gold: #ffb800;
+            --warn: #ff8c00;
+            --glow: rgba(0,212,255,0.15);
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: 'Exo 2', sans-serif;
+            background: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            overflow-x: hidden;
+            position: relative;
+        }
+
+        /* Scanline overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background: repeating-linear-gradient(
+                0deg,
+                transparent,
+                transparent 2px,
+                rgba(0,0,0,0.06) 2px,
+                rgba(0,0,0,0.06) 4px
+            );
+            pointer-events: none;
+            z-index: 9999;
+        }
+
+        /* Animated grid bg */
+        body::after {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background-image:
+                linear-gradient(rgba(0,212,255,0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0,212,255,0.03) 1px, transparent 1px);
+            background-size: 40px 40px;
+            pointer-events: none;
+            z-index: 0;
+            animation: gridPulse 8s ease-in-out infinite alternate;
+        }
+
+        @keyframes gridPulse {
+            0% { opacity: 0.4; }
+            100% { opacity: 1; }
+        }
+
+        #app {
+            position: relative;
+            z-index: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        /* ---- HEADER ---- */
+        .header {
+            background: linear-gradient(180deg, #020810 0%, #050d17 100%);
+            border-bottom: 1px solid var(--border);
+            padding: 0 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            height: 64px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .header::after {
+            content: '';
+            position: absolute;
+            bottom: 0; left: 0; right: 0;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            animation: scanLine 3s linear infinite;
+        }
+
+        @keyframes scanLine {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(100%); }
+        }
+
+        .header-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .brand-icon {
+            width: 42px; height: 42px;
+            background: linear-gradient(135deg, #ff3b3b, #ff8c00);
+            clip-path: polygon(50% 0%, 100% 25%, 100% 75%, 50% 100%, 0% 75%, 0% 25%);
+            display: flex; align-items: center; justify-content: center;
+            font-size: 18px;
+            animation: rotateSlow 20s linear infinite;
+            flex-shrink: 0;
+        }
+
+        @keyframes rotateSlow {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        .brand-text h1 {
+            font-family: 'Orbitron', monospace;
+            font-size: 1.1rem;
+            font-weight: 900;
+            color: white;
+            letter-spacing: 3px;
+            line-height: 1;
+        }
+
+        .brand-text span {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--accent);
+            letter-spacing: 2px;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .status-pill {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--accent3);
+            letter-spacing: 1px;
+        }
+
+        .status-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+            background: var(--accent3);
+            animation: blink 1.5s step-end infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.1; }
+        }
+
+        .threat-counter {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.7rem;
+            color: var(--accent2);
+            letter-spacing: 1px;
+            background: rgba(255,59,59,0.1);
+            border: 1px solid rgba(255,59,59,0.3);
+            padding: 4px 12px;
+            border-radius: 4px;
+        }
+
+        #clock {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--text-dim);
+        }
+
+        /* ---- TABS ---- */
+        .tab-bar {
+            background: var(--bg2);
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 0;
+            padding: 0 2rem;
+        }
+
+        .tab {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.65rem;
+            font-weight: 600;
+            letter-spacing: 2px;
+            padding: 12px 22px;
+            cursor: pointer;
+            color: var(--text-dim);
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            white-space: nowrap;
+        }
+
+        .tab:hover { color: var(--text); }
+
+        .tab.active {
+            color: var(--accent);
+            border-bottom-color: var(--accent);
+            background: rgba(0,212,255,0.04);
+        }
+
+        /* ---- MAIN LAYOUT ---- */
+        .main {
+            display: flex;
+            flex: 1;
+            height: calc(100vh - 64px - 40px);
+            min-height: 600px;
+        }
+
+        /* ---- LEFT PANEL ---- */
+        .left-panel {
+            width: 380px;
+            flex-shrink: 0;
+            background: var(--panel);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .panel-section {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .panel-header {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 3px;
+            color: var(--text-dim);
+            padding: 10px 16px;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .panel-header-accent {
+            width: 4px; height: 14px;
+            background: var(--accent);
+            border-radius: 2px;
+        }
+
+        /* ---- CHAT ---- */
+        .chat-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            min-height: 0;
+        }
+
+        #chat-log {
+            flex: 1;
+            overflow-y: auto;
+            padding: 12px;
+            scroll-behavior: smooth;
+        }
+
+        #chat-log::-webkit-scrollbar { width: 4px; }
+        #chat-log::-webkit-scrollbar-track { background: transparent; }
+        #chat-log::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+        .msg {
+            margin-bottom: 10px;
+            animation: msgIn 0.25s ease-out;
+        }
+
+        @keyframes msgIn {
+            from { opacity: 0; transform: translateY(8px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        .msg-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.6rem;
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+        }
+
+        .msg-bubble {
+            padding: 8px 12px;
+            border-radius: 2px 14px 14px 14px;
+            font-size: 0.8rem;
+            line-height: 1.5;
+            max-width: 90%;
+        }
+
+        .msg.ai .msg-label { color: var(--accent); }
+        .msg.ai .msg-bubble {
+            background: rgba(0,212,255,0.07);
+            border: 1px solid rgba(0,212,255,0.15);
+            border-radius: 2px 14px 14px 14px;
+        }
+
+        .msg.user {
+            align-items: flex-end;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .msg.user .msg-label { color: var(--gold); }
+        .msg.user .msg-bubble {
+            background: rgba(255,184,0,0.07);
+            border: 1px solid rgba(255,184,0,0.2);
+            border-radius: 14px 2px 14px 14px;
+        }
+
+        .chat-input-area {
+            padding: 10px 12px;
+            background: rgba(0,0,0,0.3);
+            display: flex;
+            gap: 8px;
+            border-top: 1px solid var(--border);
+        }
+
+        .chat-input-area input {
+            flex: 1;
+            background: rgba(0,212,255,0.04);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
+
+        .chat-input-area input:focus {
+            outline: none;
+            border-color: var(--accent);
+            background: rgba(0,212,255,0.07);
+        }
+
+        .chat-input-area input::placeholder { color: var(--text-dim); }
+
+        .btn {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.6rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            padding: 8px 14px;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid;
+            border-radius: 4px;
+        }
+
+        .btn-cyan {
+            background: transparent;
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-cyan:hover {
+            background: var(--accent);
+            color: #000;
+        }
+
+        .btn-red {
+            background: transparent;
+            border-color: var(--accent2);
+            color: var(--accent2);
+        }
+
+        .btn-red:hover {
+            background: var(--accent2);
+            color: white;
+            box-shadow: 0 0 18px rgba(255,59,59,0.5);
+        }
+
+        .btn-red:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+
+        .btn-green {
+            background: transparent;
+            border-color: var(--accent3);
+            color: var(--accent3);
+        }
+
+        .btn-green:hover {
+            background: var(--accent3);
+            color: #000;
+        }
+
+        /* ---- DISARM FORM ---- */
+        .disarm-section {
+            padding: 14px;
+            background: rgba(255,59,59,0.02);
+        }
+
+        .weapon-chips {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+
+        .chip {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.65rem;
+            padding: 4px 10px;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            cursor: pointer;
+            border-radius: 2px;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+
+        .chip:hover {
+            border-color: var(--accent2);
+            color: var(--accent2);
+            background: rgba(255,59,59,0.08);
+        }
+
+        .chip.active {
+            border-color: var(--accent2);
+            color: var(--accent2);
+            background: rgba(255,59,59,0.12);
+        }
+
+        .form-row {
+            margin-bottom: 8px;
+        }
+
+        .form-row label {
+            display: block;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-dim);
+            letter-spacing: 2px;
+            margin-bottom: 4px;
+        }
+
+        .form-row input, .form-row select {
+            width: 100%;
+            background: rgba(0,0,0,0.4);
+            border: 1px solid var(--border);
+            color: var(--text);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            padding: 8px 12px;
+            border-radius: 4px;
+            transition: 0.2s;
+        }
+
+        .form-row input:focus, .form-row select:focus {
+            outline: none;
+            border-color: var(--accent2);
+        }
+
+        .form-row input::placeholder { color: var(--text-dim); }
+
+        .form-row select option { background: var(--panel); }
+
+        .form-row-2col {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .disarm-btn-wrap {
+            margin-top: 12px;
+        }
+
+        #disarm-btn {
+            width: 100%;
+            padding: 12px;
+            font-size: 0.75rem;
+            letter-spacing: 3px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        #disarm-btn::before {
+            content: '';
+            position: absolute;
+            top: 0; left: -100%;
+            width: 100%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,59,59,0.2), transparent);
+            transition: 0.4s;
+        }
+
+        #disarm-btn:hover::before {
+            left: 100%;
+        }
+
+        /* ---- MAP ---- */
+        .right-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            background: var(--bg2);
+        }
+
+        .map-toolbar {
+            background: var(--panel);
+            border-bottom: 1px solid var(--border);
+            padding: 8px 16px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .map-toolbar-left {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .map-title-text {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 2px;
+            color: var(--text);
+        }
+
+        .filter-chips {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .filter-chip {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.6rem;
+            padding: 3px 10px;
+            border: 1px solid var(--border);
+            color: var(--text-dim);
+            cursor: pointer;
+            border-radius: 20px;
+            transition: 0.15s;
+        }
+
+        .filter-chip:hover, .filter-chip.active {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        #map {
+            flex: 1;
+            width: 100%;
+            min-height: 0;
+        }
+
+        /* Leaflet overrides */
+        .leaflet-container { background: #0a1520 !important; }
+
+        .leaflet-popup-content-wrapper {
+            background: #0d1e30 !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 8px !important;
+            color: var(--text) !important;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.7) !important;
+        }
+
+        .leaflet-popup-tip { background: #0d1e30 !important; }
+
+        /* ---- STATS BAR ---- */
+        .stats-bar {
+            background: var(--panel);
+            border-top: 1px solid var(--border);
+            padding: 6px 16px;
+            display: flex;
+            gap: 24px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .stat-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .stat-label {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-dim);
+            letter-spacing: 1px;
+        }
+
+        .stat-value {
+            font-family: 'Orbitron', monospace;
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .stat-value.cyan { color: var(--accent); }
+        .stat-value.red { color: var(--accent2); }
+        .stat-value.green { color: var(--accent3); }
+        .stat-value.gold { color: var(--gold); }
+
+        /* ---- LOG PANEL (bottom right) ---- */
+        .log-panel {
+            background: var(--panel2);
+            border-top: 1px solid var(--border);
+            height: 130px;
+            overflow-y: auto;
+            padding: 8px 14px;
+        }
+
+        .log-panel::-webkit-scrollbar { width: 3px; }
+        .log-panel::-webkit-scrollbar-thumb { background: var(--border); }
+
+        .log-entry {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.65rem;
+            color: var(--text-dim);
+            padding: 3px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.03);
+            animation: logIn 0.2s ease-out;
+        }
+
+        @keyframes logIn {
+            from { opacity: 0; transform: translateX(-10px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        .log-entry.success { color: var(--accent3); }
+        .log-entry.warning { color: var(--warn); }
+        .log-entry.critical { color: var(--accent2); }
+        .log-entry.info { color: var(--accent); }
+
+        /* ---- ALERT TOAST ---- */
+        #toast-container {
+            position: fixed;
+            top: 80px;
+            right: 20px;
+            z-index: 10000;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-left: 3px solid var(--accent3);
+            padding: 12px 16px;
+            border-radius: 6px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.75rem;
+            max-width: 320px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+            animation: toastIn 0.3s ease-out;
+        }
+
+        .toast.error { border-left-color: var(--accent2); }
+        .toast.warn { border-left-color: var(--warn); }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(40px); }
+        }
+
+        /* ---- HEATMAP LEGEND ---- */
+        .threat-legend {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }
+
+        .legend-dot {
+            width: 8px; height: 8px;
+            border-radius: 50%;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 0.6rem;
+            color: var(--text-dim);
+        }
+
+        /* ---- LOADING ---- */
+        .loading-pulse {
+            display: inline-block;
+            animation: loadPulse 0.8s ease-in-out infinite alternate;
+        }
+
+        @keyframes loadPulse {
+            from { opacity: 0.4; }
+            to { opacity: 1; }
+        }
+
+        /* ---- RESPONSIVE ---- */
+        @media (max-width: 900px) {
+            .main { flex-direction: column; height: auto; }
+            .left-panel { width: 100%; height: auto; }
+            .right-panel { height: 60vh; min-height: 400px; }
+        }
+
+        /* Typing indicator */
+        .typing-dots span {
+            display: inline-block;
+            width: 5px; height: 5px;
+            background: var(--accent);
+            border-radius: 50%;
+            margin: 0 1px;
+            animation: typingDot 1.2s infinite;
+        }
+
+        .typing-dots span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+        @keyframes typingDot {
+            0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+            40% { transform: scale(1); opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+<div id="toast-container"></div>
+
+<div id="app">
+    <!-- HEADER -->
+    <div class="header">
+        <div class="header-brand">
+            <div class="brand-icon">⚡</div>
+            <div class="brand-text">
+                <h1>DISARMER AI</h1>
+                <span>ADVANCED TACTICAL COMMAND · v3.0</span>
+            </div>
+        </div>
+        <div class="header-status">
+            <div class="status-pill">
+                <div class="status-dot"></div>
+                SYSTEM ONLINE
+            </div>
+            <div class="threat-counter" id="threat-counter">THREATS: 0</div>
+            <div id="clock">--:--:--</div>
+        </div>
+    </div>
+
+    <!-- TABS -->
+    <div class="tab-bar">
+        <div class="tab active" data-tab="tactical">⚔️ TACTICAL OPS</div>
+        <div class="tab" data-tab="intel">📡 INTEL BRIEF</div>
+        <div class="tab" data-tab="history">📋 DISARM LOG</div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="main">
+        <!-- LEFT PANEL -->
+        <div class="left-panel">
+            <!-- CHAT -->
+            <div class="chat-section panel-section" style="min-height: 260px; max-height: 280px;">
+                <div class="panel-header">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div class="panel-header-accent"></div>
+                        AI COMMAND INTERFACE
+                    </div>
+                    <button class="btn btn-cyan" id="clear-chat-btn" style="padding:3px 8px;font-size:0.5rem;">CLEAR</button>
+                </div>
+                <div id="chat-log"></div>
+                <div class="chat-input-area">
+                    <input id="user-input" type="text" placeholder="Ask about weapons, threats, disarmament...">
+                    <button class="btn btn-cyan" id="send-btn">TX</button>
+                </div>
+            </div>
+
+            <!-- DISARM FORM -->
+            <div class="disarm-section" style="overflow-y:auto; flex:1;">
+                <div class="panel-header" style="margin: -14px -14px 14px; padding: 10px 14px;">
+                    <div style="display:flex;align-items:center;gap:8px;">
+                        <div class="panel-header-accent" style="background:var(--accent2);"></div>
+                        DISARM PROTOCOL
+                    </div>
+                    <span style="font-size:0.55rem; color: var(--accent2);">▶ ENHANCED</span>
+                </div>
+
+                <div class="weapon-chips" id="weapon-chips">
+                    <span class="chip" data-weapon="Ballistic Missile">🚀 BALLISTIC</span>
+                    <span class="chip" data-weapon="Cruise Missile">🎯 CRUISE</span>
+                    <span class="chip" data-weapon="ICBM">☢️ ICBM</span>
+                    <span class="chip" data-weapon="Hypersonic Missile">⚡ HYPERSONIC</span>
+                    <span class="chip" data-weapon="RPG-7">💥 RPG</span>
+                    <span class="chip" data-weapon="Assault Rifle">🔫 RIFLE</span>
+                    <span class="chip" data-weapon="C4 Explosive">💣 C4</span>
+                    <span class="chip" data-weapon="Drone Swarm">🛸 DRONE</span>
+                    <span class="chip" data-weapon="Chemical Agent">🧪 CHEM</span>
+                    <span class="chip" data-weapon="Surface-to-Air Missile">🎯 SAM</span>
+                    <span class="chip" data-weapon="Anti-Tank Missile">🔻 ATM</span>
+                    <span class="chip" data-weapon="Land Mine">⚠️ MINE</span>
+                </div>
+
+                <div class="form-row">
+                    <label>WEAPON TYPE</label>
+                    <input id="weapon-input" type="text" placeholder="Enter weapon designation..." list="weapon-list">
+                    <datalist id="weapon-list">
+                        <option>Ballistic Missile</option>
+                        <option>Cruise Missile</option>
+                        <option>ICBM (Intercontinental)</option>
+                        <option>Hypersonic Missile</option>
+                        <option>Rocket Launcher</option>
+                        <option>RPG-7</option>
+                        <option>Assault Rifle</option>
+                        <option>Sniper Rifle</option>
+                        <option>C4 Explosive</option>
+                        <option>Grenade</option>
+                        <option>Land Mine</option>
+                        <option>IED</option>
+                        <option>Combat Knife</option>
+                        <option>Drone Swarm</option>
+                        <option>Chemical Agent</option>
+                        <option>Biological Agent</option>
+                        <option>Surface-to-Air Missile</option>
+                        <option>Anti-Tank Missile</option>
+                        <option>Nuclear Device</option>
+                    </datalist>
+                </div>
+
+                <div class="form-row">
+                    <label>THREAT PRIORITY</label>
+                    <select id="priority-select">
+                        <option value="CRITICAL">🔴 CRITICAL</option>
+                        <option value="HIGH" selected>🟠 HIGH</option>
+                        <option value="MODERATE">🟡 MODERATE</option>
+                        <option value="LOW">🟢 LOW</option>
+                    </select>
+                </div>
+
+                <div class="form-row">
+                    <label>TARGET LOCATION</label>
+                    <input id="target-location-input" type="text" placeholder="City, base, or coordinates...">
+                </div>
+
+                <div class="form-row-2col">
+                    <div>
+                        <label>DATE</label>
+                        <input id="target-date-input" type="date">
+                    </div>
+                    <div>
+                        <label>TIME (UTC)</label>
+                        <input id="target-time-input" type="time">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <label>OPERATOR CALLSIGN</label>
+                    <input id="operator-input" type="text" placeholder="e.g. ALPHA-7, GHOST, WARDEN...">
+                </div>
+
+                <div class="form-row">
+                    <label>NOTES / INTEL</label>
+                    <input id="notes-input" type="text" placeholder="Additional threat intel...">
+                </div>
+
+                <div class="disarm-btn-wrap">
+                    <button class="btn btn-red" id="disarm-btn">💥 EXECUTE DISARM PROTOCOL</button>
+                </div>
+
+                <div style="margin-top:10px; display:flex; gap:8px;">
+                    <button class="btn btn-green" id="export-btn" style="flex:1; font-size:0.55rem;">⬇ EXPORT LOG</button>
+                    <button class="btn btn-cyan" id="clear-map-btn" style="flex:1; font-size:0.55rem;">🗑 CLEAR MAP</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- RIGHT PANEL -->
+        <div class="right-panel">
+            <div class="map-toolbar">
+                <div class="map-toolbar-left">
+                    <span class="map-title-text">🌐 GLOBAL NEUTRALIZATION MAP</span>
+                    <div class="threat-legend">
+                        <div class="legend-item"><div class="legend-dot" style="background:#ff3b3b;"></div>CRITICAL</div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#ff8c00;"></div>HIGH</div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#ffb800;"></div>MODERATE</div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#39ff14;"></div>LOW</div>
+                    </div>
+                </div>
+                <div class="filter-chips">
+                    <div class="filter-chip active" data-filter="all">ALL</div>
+                    <div class="filter-chip" data-filter="missile">MISSILES</div>
+                    <div class="filter-chip" data-filter="firearm">FIREARMS</div>
+                    <div class="filter-chip" data-filter="explosive">EXPLOSIVES</div>
+                    <div class="filter-chip" data-filter="other">OTHER</div>
+                </div>
+            </div>
+
+            <div id="map"></div>
+
+            <!-- STATS BAR -->
+            <div class="stats-bar">
+                <div class="stat-item">
+                    <span class="stat-label">NEUTRALIZED</span>
+                    <span class="stat-value red" id="stat-neutralized">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">CRITICAL</span>
+                    <span class="stat-value red" id="stat-critical">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">HIGH</span>
+                    <span class="stat-value gold" id="stat-high">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">ACTIVE MARKERS</span>
+                    <span class="stat-value cyan" id="stat-markers">0</span>
+                </div>
+                <div class="stat-item">
+                    <span class="stat-label">LAST OP</span>
+                    <span class="stat-value green" id="stat-last-op">—</span>
+                </div>
+            </div>
+
+            <!-- SYSTEM LOG -->
+            <div class="panel-header" style="border-top:1px solid var(--border);">
+                <div style="display:flex;align-items:center;gap:8px;">
+                    <div class="panel-header-accent" style="background:var(--accent3);"></div>
+                    SYSTEM LOG
+                </div>
+                <span id="log-count" style="font-size:0.55rem;color:var(--accent3);">0 ENTRIES</span>
+            </div>
+            <div class="log-panel" id="log-panel"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+// ======================== GLOBALS ========================
+const $ = id => document.getElementById(id);
+
+const chatLog = $('chat-log');
+const userInput = $('user-input');
+const sendBtn = $('send-btn');
+const disarmBtn = $('disarm-btn');
+const weaponInput = $('weapon-input');
+const logPanel = $('log-panel');
+const toastContainer = $('toast-container');
+
+let map = null;
+let markersLayer = null;
+let allMarkerData = [];
+let model = null;
+const synth = window.speechSynthesis;
+
+let stats = { neutralized: 0, critical: 0, high: 0, moderate: 0, low: 0 };
+
+// ======================== CLOCK ========================
+function updateClock() {
+    const now = new Date();
+    $('clock').textContent = now.toUTCString().slice(17, 25) + ' UTC';
+}
+setInterval(updateClock, 1000);
+updateClock();
+
+// ======================== TOAST ========================
+function showToast(msg, type = 'success', duration = 4000) {
+    const toast = document.createElement('div');
+    toast.className = `toast ${type === 'error' ? 'error' : type === 'warn' ? 'warn' : ''}`;
+    toast.textContent = msg;
+    toastContainer.appendChild(toast);
+    setTimeout(() => {
+        toast.style.animation = 'toastOut 0.3s ease-out forwards';
+        setTimeout(() => toast.remove(), 300);
+    }, duration);
+}
+
+// ======================== SYSTEM LOG ========================
+let logCount = 0;
+function addLog(msg, type = 'info') {
+    logCount++;
+    const entry = document.createElement('div');
+    entry.className = `log-entry ${type}`;
+    const ts = new Date().toUTCString().slice(17, 25);
+    entry.textContent = `[${ts}] ${msg}`;
+    logPanel.prepend(entry);
+    $('log-count').textContent = `${logCount} ENTRIES`;
+    // Keep max 100 entries
+    while (logPanel.children.length > 100) logPanel.lastChild.remove();
+}
+
+// ======================== STATS ========================
+function updateStats() {
+    $('stat-neutralized').textContent = stats.neutralized;
+    $('stat-critical').textContent = stats.critical;
+    $('stat-high').textContent = stats.high;
+    $('stat-markers').textContent = allMarkerData.length;
+    $('threat-counter').textContent = `THREATS: ${stats.neutralized}`;
+}
+
+// ======================== WEAPON DB ========================
+function getWeaponEmoji(w) {
+    if (!w) return '⚠️';
+    const n = w.toLowerCase();
+    if (n.includes('icbm') || n.includes('intercontinental')) return '☢️🚀';
+    if (n.includes('hypersonic')) return '⚡🚀';
+    if (n.includes('ballistic')) return '🚀⚡';
+    if (n.includes('cruise') && n.includes('missile')) return '🎯🚀';
+    if (n.includes('surface-to-air') || n.includes('sam')) return '🎯🔺';
+    if (n.includes('anti-tank') || n.includes('javelin') || n.includes('atm')) return '💥🔻';
+    if (n.includes('rpg') || n.includes('rocket propelled')) return '💥🧨';
+    if (n.includes('rocket launcher')) return '🚀🧨';
+    if (n.includes('missile')) return '🚀';
+    if (n.includes('sniper')) return '🎯🔫';
+    if (n.includes('assault rifle') || n.includes('ak') || n.includes('m4')) return '🔫';
+    if (n.includes('shotgun')) return '🔫💥';
+    if (n.includes('machine gun')) return '🔫🔫';
+    if (n.includes('pistol') || n.includes('handgun')) return '🔫';
+    if (n.includes('rifle')) return '🔫';
+    if (n.includes('c4') || n.includes('dynamite')) return '💣';
+    if (n.includes('ied')) return '💣⚠️';
+    if (n.includes('grenade')) return '💥';
+    if (n.includes('land mine') || (n.includes('mine') && !n.includes('missile'))) return '⚠️💣';
+    if (n.includes('explosive')) return '💣';
+    if (n.includes('knife') || n.includes('dagger') || n.includes('blade')) return '🔪';
+    if (n.includes('machete')) return '🗡️';
+    if (n.includes('sword') || n.includes('katana')) return '⚔️';
+    if (n.includes('swarm')) return '🛸🛸';
+    if (n.includes('drone') || n.includes('uav')) return '🛸⚡';
+    if (n.includes('chemical') || n.includes('toxin') || n.includes('nerve')) return '🧪☠️';
+    if (n.includes('biological') || n.includes('bio agent')) return '🦠☠️';
+    if (n.includes('nuclear') || n.includes('atomic')) return '☢️💀';
+    return '⚠️';
+}
+
+function getWeaponCategory(w) {
+    const n = (w || '').toLowerCase();
+    if (n.includes('missile') || n.includes('icbm') || n.includes('rocket') || n.includes('sam') || n.includes('rpg') || n.includes('atm') || n.includes('hypersonic') || n.includes('ballistic') || n.includes('cruise')) return 'missile';
+    if (n.includes('rifle') || n.includes('pistol') || n.includes('gun') || n.includes('shotgun') || n.includes('firearm')) return 'firearm';
+    if (n.includes('bomb') || n.includes('c4') || n.includes('explosive') || n.includes('grenade') || n.includes('mine') || n.includes('ied') || n.includes('dynamite')) return 'explosive';
+    return 'other';
+}
+
+function getThreatColor(priority) {
+    switch(priority) {
+        case 'CRITICAL': return '#ff3b3b';
+        case 'HIGH': return '#ff8c00';
+        case 'MODERATE': return '#ffb800';
+        case 'LOW': return '#39ff14';
+        default: return '#00d4ff';
+    }
+}
+
+// ======================== MAP ========================
+function initMap() {
+    if (map) return;
+    try {
+        map = L.map('map', { zoomControl: true, attributionControl: false }).setView([20, 0], 2);
+
+        // Dark tile layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            subdomains: 'abcd',
+            maxZoom: 19
+        }).addTo(map);
+
+        // Attribution
+        L.control.attribution({ position: 'bottomright' }).addAttribution('© OSM & CartoDB').addTo(map);
+
+        markersLayer = L.layerGroup().addTo(map);
+        addLog('Map initialized. Tactical overlay active.', 'info');
+    } catch(err) {
+        console.error('Map init error:', err);
+        $('map').innerHTML = '<div style="padding:40px; color:#ff3b3b; font-family:monospace;">⚠️ MAP ERROR — Please refresh.</div>';
+    }
+}
+
+async function geocodeLocation(address) {
+    if (!address || !address.trim()) throw new Error('Location cannot be empty');
+    const encoded = encodeURIComponent(address.trim());
+    const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encoded}&limit=1&addressdetails=1`;
+    const controller = new AbortController();
+    const tid = setTimeout(() => controller.abort(), 10000);
+    try {
+        const res = await fetch(url, {
+            headers: { 'User-Agent': 'DisarmerAI-Tactical/3.0' },
+            signal: controller.signal
+        });
+        clearTimeout(tid);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        if (!data || !data.length) throw new Error(`Location not found: "${address}"`);
+        return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon), displayName: data[0].display_name || address };
+    } catch(err) {
+        clearTimeout(tid);
+        if (err.name === 'AbortError') throw new Error('Geocoding timed out');
+        throw err;
+    }
+}
+
+function addDisarmedMarker(lat, lng, weaponType, locationText, disarmDate, disarmTime, priority, operator, notes) {
+    if (!map || !markersLayer) initMap();
+
+    const emoji = getWeaponEmoji(weaponType);
+    const color = getThreatColor(priority);
+    const category = getWeaponCategory(weaponType);
+
+    const markerData = { lat, lng, weaponType, locationText, disarmDate, disarmTime, priority, operator, notes, emoji, category };
+    allMarkerData.push(markerData);
+
+    const icon = L.divIcon({
+        html: `<div style="
+            background: rgba(5,10,20,0.92);
+            backdrop-filter: blur(4px);
+            border-radius: 50px;
+            padding: 7px 12px;
+            font-size: 26px;
+            line-height: 1;
+            border: 2px solid ${color};
+            box-shadow: 0 0 12px ${color}55, 0 4px 15px rgba(0,0,0,0.6);
+            text-align: center;
+            cursor: pointer;
+            transition: transform 0.15s;
+        " onmouseenter="this.style.transform='scale(1.2)'" onmouseleave="this.style.transform='scale(1)'">${emoji}</div>`,
+        iconSize: [52, 44],
+        popupAnchor: [0, -26],
+        className: ''
+    });
+
+    const marker = L.marker([lat, lng], { icon }).addTo(markersLayer);
+    marker._disarmData = markerData;
+
+    const popupHTML = `
+        <div style="font-family:'Share Tech Mono',monospace; min-width:240px; padding:4px;">
+            <div style="color:${color}; font-weight:800; font-size:0.8rem; margin-bottom:6px; letter-spacing:1px;">✅ NEUTRALIZED</div>
+            <table style="font-size:0.7rem; width:100%; border-collapse:collapse;">
+                <tr><td style="color:#5a7a8a; padding:2px 0;">WEAPON</td><td style="padding:2px 6px;">${weaponType} ${emoji}</td></tr>
+                <tr><td style="color:#5a7a8a; padding:2px 0;">PRIORITY</td><td style="padding:2px 6px; color:${color};">${priority}</td></tr>
+                <tr><td style="color:#5a7a8a; padding:2px 0;">LOCATION</td><td style="padding:2px 6px;">${locationText.substring(0, 60)}${locationText.length > 60 ? '…' : ''}</td></tr>
+                <tr><td style="color:#5a7a8a; padding:2px 0;">DATE</td><td style="padding:2px 6px;">${disarmDate}</td></tr>
+                <tr><td style="color:#5a7a8a; padding:2px 0;">TIME</td><td style="padding:2px 6px;">${disarmTime} UTC</td></tr>
+                ${operator ? `<tr><td style="color:#5a7a8a; padding:2px 0;">OPERATOR</td><td style="padding:2px 6px;">${operator}</td></tr>` : ''}
+                ${notes ? `<tr><td style="color:#5a7a8a; padding:2px 0;">INTEL</td><td style="padding:2px 6px;">${notes}</td></tr>` : ''}
+                <tr><td style="color:#5a7a8a; padding:2px 0;">COORDS</td><td style="padding:2px 6px;">${lat.toFixed(4)}, ${lng.toFixed(4)}</td></tr>
+            </table>
+            <div style="margin-top:8px; background:rgba(57,255,20,0.1); border:1px solid rgba(57,255,20,0.3); padding:3px 8px; border-radius:4px; color:#39ff14; font-size:0.65rem; text-align:center;">THREAT ELIMINATED</div>
+        </div>
+    `;
+    marker.bindPopup(popupHTML, { className: '' });
+    marker.openPopup();
+    map.flyTo([lat, lng], 8, { duration: 1.4, easeLinearity: 0.4 });
+
+    updateStats();
+    return marker;
+}
+
+// Filter markers
+let activeFilter = 'all';
+document.querySelectorAll('.filter-chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        activeFilter = chip.dataset.filter;
+        applyFilter();
+    });
+});
+
+function applyFilter() {
+    if (!markersLayer) return;
+    markersLayer.clearLayers();
+    allMarkerData.forEach(d => {
+        if (activeFilter === 'all' || d.category === activeFilter) {
+            addMarkerFromData(d);
+        }
+    });
+}
+
+function addMarkerFromData(d) {
+    const color = getThreatColor(d.priority);
+    const icon = L.divIcon({
+        html: `<div style="background:rgba(5,10,20,0.92);backdrop-filter:blur(4px);border-radius:50px;padding:7px 12px;font-size:26px;line-height:1;border:2px solid ${color};box-shadow:0 0 12px ${color}55;text-align:center;cursor:pointer;" onmouseenter="this.style.transform='scale(1.2)'" onmouseleave="this.style.transform='scale(1)'">${d.emoji}</div>`,
+        iconSize: [52, 44], popupAnchor: [0, -26], className: ''
+    });
+    const m = L.marker([d.lat, d.lng], { icon }).addTo(markersLayer);
+    const popupHTML = `<div style="font-family:'Share Tech Mono',monospace;min-width:200px;padding:4px;">
+        <div style="color:${color};font-weight:800;font-size:0.8rem;margin-bottom:6px;">✅ NEUTRALIZED</div>
+        <div style="font-size:0.7rem;">
+            <b>${d.weaponType}</b> ${d.emoji}<br>
+            <span style="color:#5a7a8a;">Priority:</span> <span style="color:${color};">${d.priority}</span><br>
+            <span style="color:#5a7a8a;">Location:</span> ${d.locationText.substring(0,50)}<br>
+            <span style="color:#5a7a8a;">Date:</span> ${d.disarmDate} ${d.disarmTime}
+        </div>
+    </div>`;
+    m.bindPopup(popupHTML);
+}
+
+// Clear map
+$('clear-map-btn').addEventListener('click', () => {
+    if (!markersLayer) return;
+    markersLayer.clearLayers();
+    allMarkerData = [];
+    stats = { neutralized: 0, critical: 0, high: 0, moderate: 0, low: 0 };
+    updateStats();
+    addLog('Map cleared. All markers removed.', 'warning');
+    showToast('Map cleared — all markers removed.', 'warn');
+});
+
+// ======================== CHAT ========================
+function appendMessage(text, role) {
+    const div = document.createElement('div');
+    div.className = `msg ${role}`;
+    const label = document.createElement('div');
+    label.className = 'msg-label';
+    label.textContent = role === 'ai' ? '◈ DISARMER AI' : '▶ OPERATOR';
+    const bubble = document.createElement('div');
+    bubble.className = 'msg-bubble';
+    bubble.innerHTML = text;
+    div.appendChild(label);
+    div.appendChild(bubble);
+    chatLog.appendChild(div);
+    chatLog.scrollTop = chatLog.scrollHeight;
+    return div;
+}
+
+function showTyping() {
+    const div = appendMessage('<span class="typing-dots"><span></span><span></span><span></span></span>', 'ai');
+    div.id = 'typing-indicator';
+    return div;
+}
+
+function removeTyping() {
+    const t = $('typing-indicator');
+    if (t) t.remove();
+}
+
+// AI response logic
+const weaponResponses = {
+    missile: "🎯 Missile category detected. I can neutralize Ballistic, Cruise, ICBM, Hypersonic, SAM, and ATM systems. Enter weapon details and precise location in the Disarm Protocol panel to geo-tag neutralization.",
+    icbm: "☢️ CRITICAL THREAT: ICBM detected. Intercontinental threat requires immediate high-priority disarmament protocol. Use CRITICAL priority and enter precise coordinates for emergency neutralization.",
+    nuclear: "☢️ NUCLEAR THREAT DETECTED. This is classified CRITICAL priority. Activate full disarmament protocol immediately with exact coordinates. Immediate response required.",
+    drone: "🛸 Drone/UAV threat identified. Drone swarms can be neutralized via electronic countermeasures and signal jamming. Log location to mark neutralization zone on tactical map.",
+    chemical: "🧪 CBRN ALERT: Chemical/biological agent detected. This requires specialized HAZMAT response. Mark location with CRITICAL priority and activate containment protocols.",
+    rifle: "🔫 Small arms threat confirmed. Firearms can be neutralized and logged. Enter weapon type and location in the Disarm Protocol for tracking.",
+    explosive: "💣 Explosive ordnance detected. EOD protocols activated. Enter device type, location, and time for tactical logging and map marker placement.",
+    help: "📡 I can assist with: threat identification, disarmament protocols, weapon classification, and tactical map marking. Use the Disarm Protocol form to log and geo-tag any neutralized threat.",
+    hello: "🛡️ DISARMER AI v3.0 online. Advanced tactical disarmament system active. I can neutralize missiles, firearms, explosives, drones, and CBRN threats. How can I assist?",
+    list: "📋 Weapon database includes: Ballistic Missiles, Cruise Missiles, ICBMs, Hypersonic Missiles, SAMs, RPGs, Assault Rifles, Sniper Rifles, C4, IEDs, Grenades, Land Mines, Drone Swarms, Chemical Agents, Biological Agents, Nuclear Devices, and 30+ more threats.",
+    default: "I'm your tactical disarmament command AI. Enter a weapon type and location in the Disarm Protocol panel, or ask about specific threats and neutralization procedures."
+};
+
+function getAIResponse(query) {
+    const q = query.toLowerCase();
+    if (q.includes('hello') || q.includes('hi') || q.includes('hey')) return weaponResponses.hello;
+    if (q.includes('icbm') || q.includes('intercontinental')) return weaponResponses.icbm;
+    if (q.includes('nuclear') || q.includes('atomic')) return weaponResponses.nuclear;
+    if (q.includes('missile') || q.includes('rocket')) return weaponResponses.missile;
+    if (q.includes('drone') || q.includes('uav') || q.includes('swarm')) return weaponResponses.drone;
+    if (q.includes('chemical') || q.includes('bio') || q.includes('chem')) return weaponResponses.chemical;
+    if (q.includes('rifle') || q.includes('gun') || q.includes('firearm') || q.includes('pistol')) return weaponResponses.rifle;
+    if (q.includes('bomb') || q.includes('explosive') || q.includes('c4') || q.includes('ied') || q.includes('mine')) return weaponResponses.explosive;
+    if (q.includes('list') || q.includes('weapon') || q.includes('database')) return weaponResponses.list;
+    if (q.includes('help') || q.includes('how') || q.includes('what')) return weaponResponses.help;
+    return weaponResponses.default;
+}
+
+async function handleSend() {
+    const query = userInput.value.trim();
+    if (!query) return;
+    appendMessage(query, 'user');
+    userInput.value = '';
+    addLog(`CHAT INPUT: "${query}"`, 'info');
+
+    const typing = showTyping();
+    await new Promise(r => setTimeout(r, 600 + Math.random() * 400));
+    removeTyping();
+
+    const reply = getAIResponse(query);
+    appendMessage(reply, 'ai');
+
+    if (synth) {
+        try {
+            synth.cancel();
+            const utt = new SpeechSynthesisUtterance(reply.replace(/[🎯🚀💣🔫⚠️☢️🛸🧪💥🔪🛡️📡📋]/g, '').substring(0, 120));
+            utt.rate = 0.9;
+            synth.speak(utt);
+        } catch(e) {}
+    }
+}
+
+sendBtn.addEventListener('click', handleSend);
+userInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleSend(); });
+
+$('clear-chat-btn').addEventListener('click', () => {
+    chatLog.innerHTML = '';
+    addLog('Chat log cleared.', 'info');
+});
+
+// ======================== WEAPON CHIPS ========================
+document.querySelectorAll('#weapon-chips .chip').forEach(chip => {
+    chip.addEventListener('click', () => {
+        document.querySelectorAll('#weapon-chips .chip').forEach(c => c.classList.remove('active'));
+        chip.classList.add('active');
+        weaponInput.value = chip.dataset.weapon;
+    });
+});
+
+// ======================== DISARM ========================
+disarmBtn.addEventListener('click', async () => {
+    const weapon = weaponInput.value.trim();
+    const priority = $('priority-select').value;
+    const date = $('target-date-input').value;
+    const time = $('target-time-input').value;
+    const location = $('target-location-input').value.trim();
+    const operator = $('operator-input').value.trim() || 'ANONYMOUS';
+    const notes = $('notes-input').value.trim();
+
+    if (!weapon) { showToast('⚠️ Weapon type required.', 'error'); return; }
+    if (!date) { showToast('⚠️ Date required.', 'error'); return; }
+    if (!time) { showToast('⚠️ Time required.', 'error'); return; }
+    if (!location) { showToast('⚠️ Target location required.', 'error'); return; }
+
+    disarmBtn.disabled = true;
+    disarmBtn.innerHTML = '<span class="loading-pulse">⚡ NEUTRALIZING...</span>';
+
+    const emoji = getWeaponEmoji(weapon);
+    appendMessage(`🔻 Disarm protocol activated: <b>${weapon}</b> ${emoji} at <b>${location}</b> — ${priority} priority. Acquiring coordinates…`, 'ai');
+    addLog(`DISARM INITIATED: ${weapon} @ ${location} [${priority}] by ${operator}`, 'warning');
+
+    try {
+        if (!map) initMap();
+        const { lat, lng, displayName } = await geocodeLocation(location);
+
+        addDisarmedMarker(lat, lng, weapon, displayName, date, time, priority, operator, notes);
+
+        stats.neutralized++;
+        if (priority === 'CRITICAL') stats.critical++;
+        else if (priority === 'HIGH') stats.high++;
+        else if (priority === 'MODERATE') stats.moderate++;
+        else stats.low++;
+
+        $('stat-last-op').textContent = weapon.substring(0, 14).toUpperCase();
+        updateStats();
+
+        appendMessage(`✅ <b>DISARMAMENT SUCCESSFUL</b><br>${weapon} ${emoji} — ${priority} THREAT NEUTRALIZED<br>📍 ${displayName.substring(0, 70)}<br>🕐 ${date} ${time} UTC<br>👤 Operator: ${operator}`, 'ai');
+        addLog(`SUCCESS: ${weapon} neutralized @ ${displayName.substring(0,50)} [${lat.toFixed(3)},${lng.toFixed(3)}]`, 'success');
+        showToast(`✅ ${weapon} neutralized at ${location}.`, 'success');
+
+        // Clear form
+        weaponInput.value = '';
+        $('target-location-input').value = '';
+        $('target-date-input').value = '';
+        $('target-time-input').value = '';
+        $('notes-input').value = '';
+        document.querySelectorAll('#weapon-chips .chip').forEach(c => c.classList.remove('active'));
+
+    } catch(err) {
+        console.error('Disarm error:', err);
+        stats.neutralized++;
+        if (priority === 'CRITICAL') stats.critical++;
+        else if (priority === 'HIGH') stats.high++;
+        updateStats();
+        appendMessage(`⚠️ <b>DISARM LOGGED</b> — Marker placement failed: ${err.message}<br>${weapon} ${emoji} recorded as neutralized in log. Refine location for visual marker.`, 'ai');
+        addLog(`GEOCODE FAIL: ${weapon} @ "${location}" — ${err.message}`, 'warning');
+        showToast(`⚠️ Logged without map marker: ${err.message}`, 'warn');
+    }
+
+    disarmBtn.disabled = false;
+    disarmBtn.innerHTML = '💥 EXECUTE DISARM PROTOCOL';
+});
+
+// ======================== EXPORT ========================
+$('export-btn').addEventListener('click', () => {
+    if (!allMarkerData.length) {
+        showToast('No data to export.', 'warn');
+        return;
+    }
+    const lines = ['DISARMER AI v3.0 - NEUTRALIZATION LOG', `Generated: ${new Date().toUTCString()}`, '', 'ID,WEAPON,PRIORITY,CATEGORY,DATE,TIME,LAT,LNG,LOCATION,OPERATOR,NOTES'];
+    allMarkerData.forEach((d, i) => {
+        lines.push(`${i+1},"${d.weaponType}",${d.priority},${d.category},${d.disarmDate},${d.disarmTime},${d.lat},${d.lng},"${d.locationText.replace(/"/g, '')}","${d.operator || ''}","${d.notes || ''}"`);
+    });
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `disarmer-log-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addLog(`CSV export: ${allMarkerData.length} records.`, 'info');
+    showToast(`Exported ${allMarkerData.length} records.`, 'success');
+});
+
+// ======================== TABS ========================
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        // Tab switching is visual only for now
+        const tabId = tab.dataset.tab;
+        if (tabId === 'history') {
+            appendMessage('📋 Disarm history is available in the System Log panel at the bottom right.', 'ai');
+        } else if (tabId === 'intel') {
+            appendMessage('📡 Intel brief: Ballistic missiles (Scud, DF-5, Minuteman), Cruise missiles (Tomahawk, Kalibr), ICBMs (RS-28 Sarmat, Trident II), SAMs (S-400, Patriot). Use disarm protocol to neutralize any classified threat.', 'ai');
+        }
+    });
+});
+
+// ======================== TF MODEL ========================
+async function initTFModel() {
+    try {
+        model = tf.sequential();
+        model.add(tf.layers.dense({ units: 16, inputShape: [10], activation: 'relu' }));
+        model.add(tf.layers.dense({ units: 8, activation: 'relu' }));
+        model.add(tf.layers.dense({ units: 6, activation: 'softmax' }));
+        model.compile({ optimizer: tf.train.adam(0.01), loss: 'categoricalCrossentropy' });
+        const di = tf.zeros([1, 10]);
+        const dt = tf.zeros([1, 6]);
+        await model.fit(di, dt, { epochs: 1, verbose: 0 });
+        tf.dispose([di, dt]);
+        addLog('TF.js neural classifier initialized.', 'info');
+    } catch(e) {
+        console.warn('TF fallback:', e);
+        model = null;
+    }
+}
+
+// ======================== INIT ========================
+window.addEventListener('DOMContentLoaded', async () => {
+    initMap();
+    await initTFModel();
+
+    appendMessage("🛡️ <b>DISARMER AI v3.0 ONLINE</b><br>Advanced tactical command system active. Weapons database loaded with 30+ threat classifications. Use the Disarm Protocol to neutralize and geo-tag threats on the global map. Type a question or select a weapon chip to begin.", 'ai');
+
+    addLog('System boot complete. All subsystems nominal.', 'success');
+    addLog('Tactical map initialized. CartoDB dark overlay active.', 'info');
+    addLog('TF.js classifier ready.', 'info');
+    addLog('Awaiting operator input…', 'info');
+
+    // Demo marker
+    setTimeout(() => {
+        if (map) {
+            const demoIcon = L.divIcon({
+                html: `<div style="background:rgba(0,20,40,0.95);border-radius:40px;padding:8px 14px;font-size:22px;border:1px solid #00d4ff;box-shadow:0 0 14px rgba(0,212,255,0.4);">🛡️</div>`,
+                iconSize: [54, 44], className: ''
+            });
+            L.marker([20.5, 0.2], { icon: demoIcon })
+                .addTo(map)
+                .bindPopup(`<div style="font-family:'Share Tech Mono',monospace;padding:4px;"><div style="color:#00d4ff;font-weight:800;font-size:0.8rem;margin-bottom:6px;">DISARMER AI v3.0</div><div style="font-size:0.7rem;">Tactical command online.<br>Missile defense ready.<br>Use Disarm Protocol to begin.</div></div>`)
+                .openPopup();
+        }
+    }, 1200);
+});
+</script>
+</body>
+</html>
